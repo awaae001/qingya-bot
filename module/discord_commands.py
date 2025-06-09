@@ -228,7 +228,7 @@ def register_commands(tree: app_commands.CommandTree, bot_instance):
             embed.set_image(url=image_url_for_embed)
 
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        embed.set_footer(text=f"{config.BOT_NAME} ·自动转发系统|发送时间: {timestamp}")
+        embed.set_footer(text=f"{config.BOT_NAME} ·自动转发系统 | 发送时间: {timestamp}")
 
         # 6. 发送Embed到目标频道
         sent_to_channels = 0
@@ -301,7 +301,7 @@ def register_commands(tree: app_commands.CommandTree, bot_instance):
         await interaction.edit_original_response(content=final_response)
 
 
-    @tree.command(name="del", description="（敏感）删除机器人发送的消息")
+    @tree.command(name="del", description="（敏感）删除Discord消息")
     @app_commands.check(check_auth)
     @app_commands.describe(
         message_link="要删除的消息链接"
@@ -342,13 +342,50 @@ def register_commands(tree: app_commands.CommandTree, bot_instance):
                 await interaction.response.send_message("❌ 没有权限访问该消息", ephemeral=True)
                 return
 
-            if message.author.id != bot_instance.user.id:
-                await interaction.response.send_message("❌ 只能删除机器人自己发送的消息", ephemeral=True)
-                return
-
-            await message.delete()
-            await interaction.response.send_message("✅ 消息已成功删除", ephemeral=True)
-            logger.info(f"用户 {interaction.user} 删除了消息 {message_id} 在频道 {channel_id}")
+            # 创建确认按钮
+            confirm_button = discord.ui.Button(label="确认删除", style=discord.ButtonStyle.danger)
+            cancel_button = discord.ui.Button(label="取消", style=discord.ButtonStyle.secondary)
+            
+            view = discord.ui.View()
+            view.add_item(confirm_button)
+            view.add_item(cancel_button)
+            
+            # 消息作者信息
+            author_name = message.author.name
+            
+            # 定义按钮回调
+            async def confirm_callback(interaction_confirm: discord.Interaction):
+                try:
+                    await message.delete()
+                    await interaction_confirm.response.edit_message(content="✅ 消息已成功删除", view=None)
+                    logger.info(f"用户 {interaction.user} 删除了消息 {message_id} 在频道 {channel_id}")
+                except discord.Forbidden:
+                    await interaction_confirm.response.edit_message(content="❌ 没有权限删除该消息", view=None)
+                except Exception as e:
+                    logger.error(f"删除消息时出错: {e}")
+                    await interaction_confirm.response.edit_message(content=f"❌ 删除消息时出错: {e}", view=None)
+            
+            async def cancel_callback(interaction_cancel: discord.Interaction):
+                await interaction_cancel.response.edit_message(content="❌ 已取消删除操作", view=None)
+            
+            # 设置回调
+            confirm_button.callback = confirm_callback
+            cancel_button.callback = cancel_callback
+            
+            # 创建嵌入式确认消息
+            embed = discord.Embed(
+                title="⚠️ 确认删除消息",
+                description=f"您确定要删除来自 {author_name} 的消息吗？\n\n此操作无法撤销！",
+                color=discord.Color.orange()
+            )
+            embed.set_footer(text=f"{config.BOT_NAME} ·自动转发系统丨消息ID: {message_id} | 频道ID: {channel_id}")
+            
+            # 发送嵌入式确认消息
+            await interaction.response.send_message(
+                embed=embed,
+                view=view,
+                ephemeral=True
+            )
 
         except ValueError:
              await interaction.response.send_message("❌ 消息链接中的ID无效", ephemeral=True)
