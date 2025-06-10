@@ -64,6 +64,17 @@ SPECIAL_CHANNELS = [
     if channel_id.strip()
 ]  
 
+# 日志和反馈频道配置
+LOG_CHANNELS = [
+    int(channel_id.strip())
+    for channel_id in os.getenv("LOG_CHANNELS", "").split(",")
+    if channel_id.strip()
+]
+
+# 私聊器配置
+DB_JSON_DIR = os.getenv("DB_JSON_DIR", "./data/")
+REP_RATE  = int(os.getenv("REP_RATE", 1800))
+
 # 定时清理器配置
 IMAGE_DIR = os.getenv("IMAGE_DIR", "./data/image/") # 添加一个默认值以防未设置
 CLEANUP_INTERVAL_HOURS = int(os.getenv("CLEANUP_INTERVAL_HOURS", 6)) 

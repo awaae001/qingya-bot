@@ -10,6 +10,7 @@ import psutil
 import time
 import aiohttp
 from .utils import channel_utils,file_utils
+from .feedback import FeedbackModal, FeedbackView
 
 logger = logging.getLogger(__name__)
 
@@ -444,6 +445,25 @@ def register_commands(tree: app_commands.CommandTree, bot_instance):
 
         logger.info("有用户发送了卡片")
         await interaction.response.send_message(embed=embed)
+
+    @tree.command(name="rep", description="和管理员私聊")
+    async def rep_command(interaction: discord.Interaction):
+        """处理/rep命令，创建私聊按钮"""
+        embed = discord.Embed(
+            title="📢 提交反馈",
+            description="点击下方按钮提交您创建一个输入框，键入你要私聊的内容 \n 控件将在 60 s 后删除",
+            color=discord.Color.blue()
+        )
+        embed.set_footer(text=f"{config.BOT_NAME} · 私聊系统")
+        
+        view = FeedbackView()
+        await interaction.response.send_message(
+            embed=embed,
+            view=view,
+            ephemeral=False,
+            delete_after=60
+        )
+        logger.info(f"用户 {interaction.user} 请求了私聊表单")
 
     @tree.command(name="status", description="显示系统和机器人状态")
     async def status_command(interaction: discord.Interaction):
