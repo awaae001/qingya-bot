@@ -8,7 +8,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-FEEDBACK_DATA_PATH = Path(config.DB_JSON_DIR)
+FEEDBACK_DATA_PATH = Path(config.FEEDBACK_DATA_PATH)
 
 def save_feedback(feedback_id, user_id, content):
     """保存反馈到本地JSON文件"""
@@ -22,7 +22,6 @@ def save_feedback(feedback_id, user_id, content):
             "user_id": user_id,
             "content": content,
             "timestamp": time.time(),
-            "replied": False
         }
         
         with open(FEEDBACK_DATA_PATH, 'w', encoding='utf-8') as f:
@@ -41,21 +40,6 @@ def load_feedback(feedback_id):
     except Exception as e:
         logger.error(f"加载反馈失败: {e}")
     return None
-
-def update_feedback(feedback_id, replied=True):
-    """更新私聊状态"""
-    try:
-        if FEEDBACK_DATA_PATH.exists():
-            with open(FEEDBACK_DATA_PATH, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            
-            if feedback_id in data:
-                data[feedback_id]["replied"] = replied
-                
-                with open(FEEDBACK_DATA_PATH, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        logger.error(f"更新反馈状态失败: {e}")
 
 def delete_feedback(feedback_id):
     """删除本地数据"""
@@ -140,11 +124,69 @@ class FeedbackReplyView(discord.ui.View):
             await interaction.response.send_message("⚠️ 找不到该记录", ephemeral=True)
             return
             
-        if feedback_data["replied"]:
-            await interaction.response.send_message("⚠️ 回复过了", ephemeral=True)
+        await interaction.response.send_modal(ReplyModal(self.feedback_id, feedback_data["user_id"]))
+        
+    @discord.ui.button(
+        label="拒绝",
+        style=discord.ButtonStyle.danger,
+        custom_id="reject_button"
+    )
+    async def reject_button_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """拒绝按钮点击处理"""
+        feedback_data = load_feedback(self.feedback_id)
+        if not feedback_data:
+            await interaction.response.send_message("⚠️ 找不到该记录", ephemeral=True)
             return
             
-        await interaction.response.send_modal(ReplyModal(self.feedback_id, feedback_data["user_id"]))
+        # 记录被拒绝用户ID和当前时间
+        try:
+            data = {}
+            if FEEDBACK_DATA_PATH.exists():
+                with open(FEEDBACK_DATA_PATH, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            
+            data[f"rejected_{feedback_data['user_id']}"] = {
+                "timestamp": time.time()
+            }
+            
+            with open(FEEDBACK_DATA_PATH, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"记录拒绝用户失败: {e}")
+
+        # 删除反馈数据
+        delete_feedback(self.feedback_id)
+        
+        try:
+            # 更新原始消息状态
+            message = await interaction.channel.fetch_message(interaction.message.id)
+            new_embed = discord.Embed(
+                title="❌ 已拒绝私聊",
+                description=message.embeds[0].description,
+                color=discord.Color.red()
+            )
+            for field in message.embeds[0].fields:
+                new_embed.add_field(name=field.name, value=field.value, inline=field.inline)
+            if message.embeds[0].author:
+                new_embed.set_author(
+                    name=message.embeds[0].author.name,
+                    icon_url=message.embeds[0].author.icon_url
+                )
+            if message.embeds[0].footer:
+                new_embed.set_footer(text=message.embeds[0].footer.text)
+            
+            await message.edit(embed=new_embed, view=None)
+            
+            await interaction.response.send_message(
+                '✅ 已拒绝该私聊请求',
+                ephemeral=True
+            )
+        except Exception as e:
+            logger.error(f"拒绝私聊处理失败: {e}")
+            await interaction.response.send_message(
+                '❌ 拒绝处理失败: ' + str(e),
+                ephemeral=True
+            )
 
 class ReplyModal(discord.ui.Modal, title='回复'):
     """回复表单模态框"""
@@ -163,21 +205,55 @@ class ReplyModal(discord.ui.Modal, title='回复'):
 
     async def on_submit(self, interaction: discord.Interaction):
         """表单提交处理"""
+        # 先立即响应交互，避免超时
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True)
+        
         try:
+            # 发送私信给用户
             user = await interaction.client.fetch_user(self.user_id)
             await user.send(
-                f"📨 管理员回复了你的私聊 (ID: {self.feedback_id}):\n{self.reply.value}"
+                f"📨 管理员回复了你的私聊 (ID: {self.feedback_id}):\n\n{self.reply.value} \n\n私信 bot 的话，管理员将无法收到你对 bot 的私信内容"
             )
             
+            # 删除反馈数据
             delete_feedback(self.feedback_id)
-            await interaction.response.send_message(
-                '✅ 回复已发送给用户',
-                ephemeral=True
-            )
+            
+            try:
+                # 更新原始消息状态
+                message = await interaction.channel.fetch_message(interaction.message.id)
+                new_embed = discord.Embed(
+                    title="✅ 已回复私聊",
+                    description=message.embeds[0].description,
+                    color=discord.Color.green()
+                )
+                for field in message.embeds[0].fields:
+                    new_embed.add_field(name=field.name, value=field.value, inline=field.inline)
+                if message.embeds[0].author:
+                    new_embed.set_author(
+                        name=message.embeds[0].author.name,
+                        icon_url=message.embeds[0].author.icon_url
+                    )
+                if message.embeds[0].footer:
+                    new_embed.set_footer(text=message.embeds[0].footer.text)
+                
+                await message.edit(embed=new_embed, view=None)
+                
+                # 发送成功通知
+                await interaction.followup.send(
+                    '✅ 回复已发送给用户',
+                    ephemeral=True
+                )
+            except Exception as e:
+                logger.error(f"更新消息失败: {e}")
+                await interaction.followup.send(
+                    '⚠️ 回复已发送但更新消息失败',
+                    ephemeral=True
+                )
         except Exception as e:
             logger.error(f"发送回复失败: {e}")
-            await interaction.response.send_message(
-                '❌ 回复发送失败',
+            await interaction.followup.send(
+                '❌ 回复发送失败: ' + str(e),
                 ephemeral=True
             )
 
@@ -202,10 +278,22 @@ class FeedbackView(discord.ui.View):
                 with open(FEEDBACK_DATA_PATH, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     
+                    # 检查是否被拒绝过
+                    rejected_key = f"rejected_{interaction.user.id}"
+                    if rejected_key in data:
+                        last_rejected = data[rejected_key]["timestamp"]
+                        if current_time - last_rejected < config.REJECT_COOLDOWN:
+                            remaining = int(config.REJECT_COOLDOWN - (current_time - last_rejected))
+                            await interaction.response.send_message(
+                                f"⛔ 您最近被拒绝过申请，请等待 {remaining}秒 后再试",
+                                ephemeral=True
+                            )
+                            return
+                    
                     # 查找用户最近的反馈
                     user_feedbacks = [
                         fb for fb in data.values() 
-                        if fb["user_id"] == interaction.user.id
+                        if "user_id" in fb and fb["user_id"] == interaction.user.id
                     ]
                     
                     if user_feedbacks:

@@ -72,8 +72,9 @@ LOG_CHANNELS = [
 ]
 
 # 私聊器配置
-DB_JSON_DIR = os.getenv("DB_JSON_DIR", "./data/")
+FEEDBACK_DATA_PATH = os.getenv("FEEDBACK_DATA_PATH", "./data/feedback.json")
 REP_RATE  = int(os.getenv("REP_RATE", 1800))
+REJECT_COOLDOWN = int(os.getenv("REJECT_COOLDOWN", 86400))  # 1天冷却
 
 # 定时清理器配置
 IMAGE_DIR = os.getenv("IMAGE_DIR", "./data/image/") # 添加一个默认值以防未设置

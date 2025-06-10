@@ -450,7 +450,7 @@ def register_commands(tree: app_commands.CommandTree, bot_instance):
     async def rep_command(interaction: discord.Interaction):
         """处理/rep命令，创建私聊按钮"""
         embed = discord.Embed(
-            title="📢 提交反馈",
+            title="📢 请求私聊",
             description="点击下方按钮提交您创建一个输入框，键入你要私聊的内容 \n 控件将在 60 s 后删除",
             color=discord.Color.blue()
         )
