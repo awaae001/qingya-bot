@@ -4,6 +4,7 @@ import logging
 import config
 import uuid
 import json
+import asyncio
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -126,6 +127,69 @@ class FeedbackReplyView(discord.ui.View):
             
         await interaction.response.send_modal(ReplyModal(self.feedback_id, feedback_data["user_id"]))
         
+    @discord.ui.button(
+        label="忽略",
+        style=discord.ButtonStyle.secondary,
+        custom_id="ignore_button"
+    )
+    async def ignore_button_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """忽略按钮点击处理"""
+        feedback_data = load_feedback(self.feedback_id)
+        if not feedback_data:
+            await interaction.response.send_message("⚠️ 找不到该记录", ephemeral=True)
+            return
+            
+        # 记录被忽略用户ID和当前时间
+        try:
+            data = {}
+            if FEEDBACK_DATA_PATH.exists():
+                with open(FEEDBACK_DATA_PATH, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            
+            data[f"ignored_{feedback_data['user_id']}"] = {
+                "timestamp": time.time(),
+                "feedback_id": self.feedback_id
+            }
+            
+            with open(FEEDBACK_DATA_PATH, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"记录忽略用户失败: {e}")
+
+        # 删除反馈数据
+        delete_feedback(self.feedback_id)
+
+        try:
+            # 更新原始消息状态
+            message = await interaction.channel.fetch_message(interaction.message.id)
+            new_embed = discord.Embed(
+                title="⏸️ 已忽略私聊",
+                description=message.embeds[0].description,
+                color=discord.Color.light_grey()
+            )
+            for field in message.embeds[0].fields:
+                new_embed.add_field(name=field.name, value=field.value, inline=field.inline)
+            if message.embeds[0].author:
+                new_embed.set_author(
+                    name=message.embeds[0].author.name,
+                    icon_url=message.embeds[0].author.icon_url
+                )
+            if message.embeds[0].footer:
+                new_embed.set_footer(text=message.embeds[0].footer.text)
+            
+            await message.edit(embed=new_embed, view=None)
+            
+            await interaction.response.send_message(
+                '✅ 已忽略该私聊请求',
+                ephemeral=True
+            )
+        except Exception as e:
+            logger.error(f"忽略私聊处理失败: {e}")
+            await interaction.response.send_message(
+                '❌ 忽略处理失败: ' + str(e),
+                ephemeral=True
+            )
+
     @discord.ui.button(
         label="拒绝",
         style=discord.ButtonStyle.danger,
@@ -278,8 +342,10 @@ class FeedbackView(discord.ui.View):
                 with open(FEEDBACK_DATA_PATH, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     
-                    # 检查是否被拒绝过
+                    # 检查是否被拒绝或忽略过
                     rejected_key = f"rejected_{interaction.user.id}"
+                    ignored_key = f"ignored_{interaction.user.id}"
+                    
                     if rejected_key in data:
                         last_rejected = data[rejected_key]["timestamp"]
                         if current_time - last_rejected < config.REJECT_COOLDOWN:
@@ -290,21 +356,26 @@ class FeedbackView(discord.ui.View):
                             )
                             return
                     
-                    # 查找用户最近的反馈
-                    user_feedbacks = [
-                        fb for fb in data.values() 
-                        if "user_id" in fb and fb["user_id"] == interaction.user.id
+                    if ignored_key in data:
+                        # 模拟超时失败的婉拒方式
+                        logger.info(f"模拟超时处理中...控制台出现报错是正常行为")
+                        await asyncio.sleep(5) 
+                        return
+                    
+                    # 检查是否有未处理的请求
+                    pending_requests = [
+                        fb_id for fb_id, fb_data in data.items()
+                        if not fb_id.startswith("rejected_") and 
+                           "user_id" in fb_data and 
+                           fb_data["user_id"] == interaction.user.id
                     ]
                     
-                    if user_feedbacks:
-                        last_used = max(fb["timestamp"] for fb in user_feedbacks)
-                        if current_time - last_used < cooldown:
-                            remaining = int(cooldown - (current_time - last_used))
-                            await interaction.response.send_message(
-                                f"⏳ 请稍后再试！反馈功能冷却时间 (剩余: {remaining}秒)",
-                                ephemeral=True
-                            )
-                            return
+                    if pending_requests:
+                        await interaction.response.send_message(
+                            "⛔ 您已有一个未处理的私聊请求，请等待管理员处理后再提交新的请求",
+                            ephemeral=True
+                        )
+                        return
                             
         except Exception as e:
             logger.error(f"检查冷却时间失败: {e}")
