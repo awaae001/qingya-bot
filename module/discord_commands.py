@@ -9,7 +9,8 @@ from datetime import datetime
 import psutil
 import time
 import aiohttp
-from .utils import channel_utils,file_utils
+from .commands import text_command_utils,send_card_utils
+from ..utils import file_utils,channel_utils
 from .feedback import FeedbackModal, FeedbackView
 
 logger = logging.getLogger(__name__)
@@ -55,111 +56,17 @@ def register_commands(tree: app_commands.CommandTree, bot_instance):
         forward_mode: int = 0
     ):
         """处理/text命令，根据模式发送文本和可选图片到频道和Telegram"""
-        await interaction.response.send_message("正在处理请求...", ephemeral=True) # 初始响应
-
-        # 准备目标频道
-        target_channels, parse_errors = await channel_utils.prepare_target_channels(
-            bot_instance, 
-            channel_ids, 
-            channel_id_mode, 
-            forward_mode, 
-            config
+        final_response = await text_command_utils.handle_text_command(
+            interaction=interaction,
+            bot_instance=bot_instance,
+            channel_ids=channel_ids,
+            channel_id_mode=channel_id_mode,
+            content=content,
+            image_file=image_file,
+            forward_to_tg=forward_to_tg,
+            forward_mode=forward_mode
         )
-
-        # 5. 处理图片（如果存在）
-        local_image_path = None
-        if image_file:
-            # 注意：这里不再需要 discord_file_to_send，因为每次发送都会创建新的 File 对象
-            local_image_path, _ = await file_utils.save_uploaded_file(
-                image_file,
-                config.IMAGE_DIR
-            )
-            if not local_image_path:
-                await interaction.edit_original_response(content="❌ 处理上传的图片时出错。")
-                return
-
-        # 6. 发送消息到目标频道
-        sent_to_channels = 0
-        failed_channels = 0
-        sent_channel_mentions = []
-        failed_channel_mentions = []
-
-        if not target_channels:
-             logger.warning("没有找到任何有效的目标频道来发送消息。")
-             await interaction.edit_original_response(content="⚠️ 没有找到任何有效的目标频道。请检查频道ID或转发模式。")
-        else:
-            logger.info(f"准备发送消息到 {len(target_channels)} 个最终目标频道")
-            await interaction.edit_original_response(content=f"正在发送到 {len(target_channels)} 个目标频道 (模式: {channel_id_mode})...") # 更新状态
-
-            for target_channel_obj in target_channels:
-                try:
-                    file_to_send_this_time = None
-                    if local_image_path:
-                        # 每次发送都需要重新创建 File 对象
-                        file_to_send_this_time = discord.File(local_image_path, filename=image_file.filename)
-
-                    await target_channel_obj.send(content=content if content else None, file=file_to_send_this_time)
-                    logger.info(f"消息成功发送到频道 {target_channel_obj.id} ({target_channel_obj.name})")
-                    sent_to_channels += 1
-                    sent_channel_mentions.append(target_channel_obj.mention)
-
-                    # 发送成功后关闭文件句柄
-                    if file_to_send_this_time:
-                        file_to_send_this_time.close()
-                except discord.Forbidden:
-                    logger.error(f"无权发送消息到频道 {target_channel_obj.id} ({target_channel_obj.name})")
-                    failed_channels += 1
-                    failed_channel_mentions.append(f"{target_channel_obj.mention} (无权限)")
-                    # 发送失败也要关闭文件句柄
-                    if 'file_to_send_this_time' in locals() and file_to_send_this_time:
-                        file_to_send_this_time.close()
-                except Exception as e:
-                    logger.error(f"消息发送到频道 {target_channel_obj.id} ({target_channel_obj.name}) 失败: {e}")
-                    failed_channels += 1
-                    failed_channel_mentions.append(f"{target_channel_obj.mention} (发送失败)")
-                    # 发送失败也要关闭文件句柄
-                    if 'file_to_send_this_time' in locals() and file_to_send_this_time:
-                        file_to_send_this_time.close()
-
-        # 7. 发送到Telegram(如果启用且配置允许)
-        tg_sent_status = ""
-        # 检查全局开关、命令参数和TG Token配置
-        if config.FORWARD_DC_TO_TG and forward_to_tg and bot_instance.telegram_bot and config.TELEGRAM_BOT_TOKEN:
-            try:
-                await bot_instance.telegram_bot.send_to_telegram(
-                    message=content,
-                    image_path=local_image_path
-                )
-                tg_sent_status = " 和Telegram"
-                logger.info("消息已转发到Telegram")
-            except Exception as e:
-                logger.error(f"转发到Telegram失败: {e}")
-                tg_sent_status = " 但转发到Telegram失败"
-        elif forward_to_tg: # 如果用户想转发但配置不允许或未配置TG
-            if not config.FORWARD_DC_TO_TG:
-                tg_sent_status = " (TG转发已禁用)"
-                logger.warning("用户尝试转发到TG，但全局配置 FORWARD_DC_TO_TG 已禁用")
-            elif not config.TELEGRAM_BOT_TOKEN:
-                 tg_sent_status = " (TG未配置)"
-                 logger.warning("用户尝试转发到TG，但Telegram Token未配置")
-
-        # 8. 构建最终响应消息
-        content_type = "消息和图片" if image_file else "消息"
-        final_response = channel_utils.build_response_message(
-            content_type,
-            sent_to_channels,
-            failed_channels,
-            sent_channel_mentions,
-            failed_channel_mentions,
-            parse_errors,
-            channel_ids,
-            forward_mode,
-            tg_sent_status,
-            channel_id_mode # 添加新参数
-        )
-
         await interaction.edit_original_response(content=final_response)
-
 
     @tree.command(name="send", description="发送Embed消息到指定频道(ID)或所有频道")
     @app_commands.check(check_auth)
@@ -193,111 +100,17 @@ def register_commands(tree: app_commands.CommandTree, bot_instance):
         forward_mode: int = 0
     ):
         """处理/send命令，根据模式发送Embed消息到频道和Telegram"""
-        await interaction.response.send_message("正在处理请求...", ephemeral=True) # 初始响应
-
-        # 准备目标频道
-        target_channels, parse_errors = await channel_utils.prepare_target_channels(
-            bot_instance, 
-            channel_ids, 
-            channel_id_mode, 
-            forward_mode, 
-            config
-        )
-        logger.info(f"最终将尝试发送Embed到 {len(target_channels)} 个频道")
-
-        # 5. 处理图片和创建Embed
-        local_image_path = None
-        image_url_for_embed = None
-        if image_file:
-            local_image_path, _ = await file_utils.save_uploaded_file(
-                image_file,
-                config.IMAGE_DIR
-            )
-            if not local_image_path:
-                await interaction.edit_original_response(content="❌ 处理上传的图片时出错。")
-                return
-            # 使用 discord.Attachment.url 作为 Embed 图片 URL
-            image_url_for_embed = image_file.url
-
-        embed = discord.Embed(
-            title=title,
-            color=discord.Color.green()
-        )
-        if content:
-            embed.description = content
-        if image_url_for_embed:
-            embed.set_image(url=image_url_for_embed)
-
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        embed.set_footer(text=f"{config.BOT_NAME} ·自动转发系统 | 发送时间: {timestamp}")
-
-        # 6. 发送Embed到目标频道
-        sent_to_channels = 0
-        failed_channels = 0
-        sent_channel_mentions = []
-        failed_channel_mentions = []
-
-        if not target_channels:
-             logger.warning("没有找到任何有效的目标频道来发送Embed。")
-             await interaction.edit_original_response(content="⚠️ 没有找到任何有效的目标频道。请检查频道ID或转发模式。")
-        else:
-            logger.info(f"准备发送Embed到 {len(target_channels)} 个最终目标频道")
-            await interaction.edit_original_response(content=f"正在发送Embed到 {len(target_channels)} 个目标频道 (模式: {channel_id_mode})...") # 更新状态
-
-            for target_channel_obj in target_channels:
-                try:
-                    await target_channel_obj.send(embed=embed)
-                    logger.info(f"Embed成功发送到频道 {target_channel_obj.id} ({target_channel_obj.name})")
-                    sent_to_channels += 1
-                    sent_channel_mentions.append(target_channel_obj.mention)
-                except discord.Forbidden:
-                    logger.error(f"无权发送Embed到频道 {target_channel_obj.id} ({target_channel_obj.name})")
-                    failed_channels += 1
-                    failed_channel_mentions.append(f"{target_channel_obj.mention} (无权限)")
-                except Exception as e:
-                    logger.error(f"Embed发送到频道 {target_channel_obj.id} ({target_channel_obj.name}) 失败: {e}")
-                    failed_channels += 1
-                    failed_channel_mentions.append(f"{target_channel_obj.mention} (发送失败)")
-
-        # 7. 发送到Telegram(如果启用且配置允许)
-        tg_sent_status = ""
-        # 检查全局开关、命令参数和TG Token配置
-        if config.FORWARD_DC_TO_TG and forward_to_tg and bot_instance.telegram_bot and config.TELEGRAM_BOT_TOKEN:
-            tg_caption = f"{title}\n{content}" if content else title
-            if tg_caption == "\u200b": # 如果只有默认标题，TG不发送文本
-                tg_caption = None
-
-            try:
-                await bot_instance.telegram_bot.send_to_telegram(
-                    message=tg_caption,
-                    image_path=local_image_path # 传递本地路径给TG
-                )
-                tg_sent_status = " 和Telegram"
-                logger.info("Embed消息内容已转发到Telegram")
-            except Exception as e:
-                logger.error(f"转发Embed消息到Telegram失败: {e}")
-                tg_sent_status = " 但转发到Telegram失败"
-        elif forward_to_tg: # 如果用户想转发但配置不允许或未配置TG
-            if not config.FORWARD_DC_TO_TG:
-                tg_sent_status = " (TG转发已禁用)"
-                logger.warning("用户尝试转发Embed到TG，但全局配置 FORWARD_DC_TO_TG 已禁用")
-            elif not config.TELEGRAM_BOT_TOKEN:
-                 tg_sent_status = " (TG未配置)"
-                 logger.warning("用户尝试转发Embed到TG，但Telegram Token未配置")
-
-        # 8. 构建最终响应消息
-        final_response = channel_utils.build_response_message(
-            "Embed",
-            sent_to_channels,
-            failed_channels,
-            sent_channel_mentions,
-            failed_channel_mentions,
-            parse_errors,
-            channel_ids,
-            forward_mode,
-            tg_sent_status,
-            channel_id_mode # 添加新参数
-        )
+        final_response = await send_card_utils.handle_send_command(
+        interaction=interaction,
+        bot_instance=bot_instance,
+        channel_ids=channel_ids,
+        channel_id_mode=channel_id_mode,
+        title=title,
+        content=content,
+        image_file=image_file,
+        forward_to_tg=forward_to_tg,
+        forward_mode=forward_mode
+    )
 
         await interaction.edit_original_response(content=final_response)
 
@@ -464,6 +277,25 @@ def register_commands(tree: app_commands.CommandTree, bot_instance):
             delete_after=60
         )
         logger.info(f"用户 {interaction.user} 请求了私聊表单")
+
+    @tree.command(name="rep_admin", description="管理员专用私聊控件（不会自动消失）")
+    @app_commands.check(check_auth)
+    async def rep_admin_command(interaction: discord.Interaction):
+        """处理/rep_admin命令，创建管理员专用私聊按钮"""
+        embed = discord.Embed(
+            title="📢 管理员私聊",
+            description="点击下方按钮提交您创建一个输入框，键入你要私聊的内容",
+            color=discord.Color.gold()
+        )
+        embed.set_footer(text=f"{config.BOT_NAME} · 私聊系统（管理员）")
+        
+        view = FeedbackView()
+        await interaction.response.send_message(
+            embed=embed,
+            view=view,
+            ephemeral=False
+        )
+        logger.info(f"管理员 {interaction.user} 请求了私聊表单")
 
     @tree.command(name="status", description="显示系统和机器人状态")
     async def status_command(interaction: discord.Interaction):
