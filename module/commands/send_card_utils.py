@@ -1,6 +1,5 @@
 import discord
 import logging
-from typing import Tuple, List, Optional
 from datetime import datetime
 from ...utils import channel_utils, file_utils
 import config

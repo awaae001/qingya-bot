@@ -1,16 +1,9 @@
 import discord
-import asyncio
 from discord import app_commands
 import logging
-import os
-import uuid
 import config
 from datetime import datetime
-import psutil
-import time
-import aiohttp
-from .commands import text_command_utils,send_card_utils
-from ..utils import file_utils,channel_utils
+from .commands import text_command_utils, send_card_utils, delet_command_utils, status_utils
 from .feedback import FeedbackModal, FeedbackView
 
 logger = logging.getLogger(__name__)
@@ -124,88 +117,11 @@ def register_commands(tree: app_commands.CommandTree, bot_instance):
         interaction: discord.Interaction,
         message_link: str
     ):
-        """处理/del命令，删除机器人自己发送的消息"""
-        try:
-            parts = message_link.split('/')
-            if len(parts) < 7 or parts[2] != 'discord.com' or parts[3] != 'channels':
-                await interaction.response.send_message("❌ 无效的消息链接格式", ephemeral=True)
-                return
-
-            channel_id = int(parts[5])
-            message_id = int(parts[6])
-
-            # 尝试从缓存或API获取频道
-            channel = bot_instance.get_channel(channel_id)
-            if not channel:
-                 try:
-                     channel = await bot_instance.fetch_channel(channel_id)
-                 except (discord.NotFound, discord.Forbidden):
-                     await interaction.response.send_message("❌ 无法找到或访问该频道", ephemeral=True)
-                     return
-
-            if not isinstance(channel, discord.TextChannel):
-                 await interaction.response.send_message("❌ 目标必须是文本频道", ephemeral=True)
-                 return
-
-            try:
-                message = await channel.fetch_message(message_id)
-            except discord.NotFound:
-                await interaction.response.send_message("❌ 消息不存在或已被删除", ephemeral=True)
-                return
-            except discord.Forbidden:
-                await interaction.response.send_message("❌ 没有权限访问该消息", ephemeral=True)
-                return
-
-            # 创建确认按钮
-            confirm_button = discord.ui.Button(label="确认删除", style=discord.ButtonStyle.danger)
-            cancel_button = discord.ui.Button(label="取消", style=discord.ButtonStyle.secondary)
-            
-            view = discord.ui.View()
-            view.add_item(confirm_button)
-            view.add_item(cancel_button)
-            
-            # 消息作者信息
-            author_name = message.author.name
-            
-            # 定义按钮回调
-            async def confirm_callback(interaction_confirm: discord.Interaction):
-                try:
-                    await message.delete()
-                    await interaction_confirm.response.edit_message(content="✅ 消息已成功删除", view=None)
-                    logger.info(f"用户 {interaction.user} 删除了消息 {message_id} 在频道 {channel_id}")
-                except discord.Forbidden:
-                    await interaction_confirm.response.edit_message(content="❌ 没有权限删除该消息", view=None)
-                except Exception as e:
-                    logger.error(f"删除消息时出错: {e}")
-                    await interaction_confirm.response.edit_message(content=f"❌ 删除消息时出错: {e}", view=None)
-            
-            async def cancel_callback(interaction_cancel: discord.Interaction):
-                await interaction_cancel.response.edit_message(content="❌ 已取消删除操作", view=None)
-            
-            # 设置回调
-            confirm_button.callback = confirm_callback
-            cancel_button.callback = cancel_callback
-            
-            # 创建嵌入式确认消息
-            embed = discord.Embed(
-                title="⚠️ 确认删除消息",
-                description=f"您确定要删除来自 {author_name} 的消息吗？\n\n此操作无法撤销！",
-                color=discord.Color.orange()
-            )
-            embed.set_footer(text=f"{config.BOT_NAME} ·自动转发系统丨消息ID: {message_id} | 频道ID: {channel_id}")
-            
-            # 发送嵌入式确认消息
-            await interaction.response.send_message(
-                embed=embed,
-                view=view,
-                ephemeral=True
-            )
-
-        except ValueError:
-             await interaction.response.send_message("❌ 消息链接中的ID无效", ephemeral=True)
-        except Exception as e:
-            logger.error(f"删除消息时出错: {e}")
-            await interaction.response.send_message(f"❌ 删除消息时出错: {e}", ephemeral=True)
+        await delet_command_utils.handle_delete_command(
+            interaction=interaction,
+            message_link=message_link,
+            bot_instance=bot_instance
+        )
 
     @tree.command(name="card", description="发送自定义消息卡片")
     @app_commands.describe(
@@ -300,85 +216,4 @@ def register_commands(tree: app_commands.CommandTree, bot_instance):
     @tree.command(name="status", description="显示系统和机器人状态")
     async def status_command(interaction: discord.Interaction):
         """显示系统和机器人状态"""
-        await interaction.response.defer(ephemeral=False)
-
-        # 获取系统信息
-        cpu_usage = psutil.cpu_percent()
-        ram_usage = psutil.virtual_memory().percent
-
-        # 获取本地图片数量
-        image_count = 0
-        image_dir_status = "OK"
-        try:
-            if os.path.exists(config.IMAGE_DIR):
-                image_count = len([f for f in os.listdir(config.IMAGE_DIR) if os.path.isfile(os.path.join(config.IMAGE_DIR, f))])
-            else:
-                image_dir_status = "目录不存在"
-                image_count = 0
-        except Exception as e:
-            logger.warning(f"无法读取图片目录 {config.IMAGE_DIR}: {e}")
-            image_dir_status = f"读取错误 ({type(e).__name__})"
-            image_count = "N/A"
-
-        # 获取Discord延迟
-        dc_latency = round(bot_instance.latency * 1000) if bot_instance.latency else "N/A" # 毫秒
-
-        # 获取Telegram延迟 (通过直接HTTP GET)
-        tg_latency_ms = "N/A"
-        tg_status = "未配置"
-        if config.TELEGRAM_BOT_TOKEN:
-            tg_api_url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/getMe"
-            try:
-                async with aiohttp.ClientSession() as session:
-                    start_time = time.monotonic()
-                    # 增加超时时间
-                    async with session.get(tg_api_url, timeout=15) as response:
-                        # 检查状态码
-                        if response.status == 200:
-                             await response.json() # 确保读取响应体
-                             end_time = time.monotonic()
-                             tg_latency_ms = round((end_time - start_time) * 1000)
-                             tg_status = "连接正常"
-                        else:
-                            logger.warning(f"测试Telegram API延迟失败: 状态码 {response.status}")
-                            tg_latency_ms = f"错误 ({response.status})"
-                            tg_status = f"API错误 ({response.status})"
-            except aiohttp.ClientConnectorError as e:
-                 logger.warning(f"测试Telegram API延迟失败: 连接错误 {e}")
-                 tg_latency_ms = "连接错误"
-                 tg_status = "连接失败"
-            except asyncio.TimeoutError:
-                 logger.warning("测试Telegram API延迟失败: 请求超时")
-                 tg_latency_ms = "超时"
-                 tg_status = "连接超时"
-            except Exception as e:
-                logger.warning(f"测试Telegram API延迟失败: {e}")
-                tg_latency_ms = "未知错误"
-                tg_status = f"测试出错 ({type(e).__name__})"
-        else:
-             tg_latency_ms = "未配置Token"
-
-
-        # 创建Embed消息
-        embed = discord.Embed(
-            title="📊 系统与机器人状态",
-            color=discord.Color.blue()
-        )
-        embed.add_field(name="🖥️ 主机 CPU", value=f"{cpu_usage}%", inline=True)
-        embed.add_field(name="🧠 主机 RAM", value=f"{ram_usage}%", inline=True)
-        embed.add_field(name=" ", value=" ", inline=True) # 占位符对齐
-
-        embed.add_field(name="<:logosdiscordicon:1381133861874044938> Discord 延迟", value=f"{dc_latency} ms" if isinstance(dc_latency, int) else dc_latency, inline=True)
-        embed.add_field(name="<:logostelegram:1381134304729370634> Telegram 状态", value=tg_status, inline=True)
-        embed.add_field(name="<:logostelegram:1381134304729370634> TG 延迟", value=f"{tg_latency_ms} ms" if isinstance(tg_latency_ms, int) else tg_latency_ms, inline=True)
-
-        embed.add_field(name="🖼️ 本地图片数", value=str(image_count), inline=True)
-        embed.add_field(name="📂 图片目录状态", value=image_dir_status, inline=True)
-        embed.add_field(name=" ", value=" ", inline=True) # 占位符对齐
-
-
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S %Z") # 添加时区信息
-        embed.set_footer(text=f"{config.BOT_NAME} · 自动转发系统丨查询时间: {timestamp}")
-
-        await interaction.followup.send(embed=embed)
-        logger.info(f"用户 {interaction.user} 查询了状态")
+        await status_utils.handle_status_command(interaction, bot_instance)
