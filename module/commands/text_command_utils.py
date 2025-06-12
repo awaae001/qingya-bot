@@ -1,7 +1,7 @@
 import discord
 import logging
 from typing import  Optional
-from ...utils import channel_utils, file_utils
+from utils import channel_utils, file_utils
 import config
 
 logger = logging.getLogger(__name__)
