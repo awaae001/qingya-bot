@@ -124,7 +124,8 @@ async def handle_send_command(
             logger.warning("用户尝试转发Embed到TG，但Telegram Token未配置")
 
     # 8. 构建最终响应消息
-    final_response = channel_utils.build_response_message(
+    final_response = await channel_utils.build_response_message(
+        bot_instance,
         "Embed",
         sent_to_channels,
         failed_channels,
@@ -134,7 +135,8 @@ async def handle_send_command(
         channel_ids,
         forward_mode,
         tg_sent_status,
-        channel_id_mode  # 添加新参数
+        channel_id_mode,
+        config
     )
 
     await interaction.edit_original_response(content=final_response)

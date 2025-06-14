@@ -106,7 +106,8 @@ async def handle_text_command(
 
     # 构建最终响应
     content_type = "消息和图片" if image_file else "消息"
-    return channel_utils.build_response_message(
+    return await channel_utils.build_response_message(
+        bot_instance,
         content_type,
         sent_to_channels,
         failed_channels,
@@ -116,5 +117,6 @@ async def handle_text_command(
         channel_ids,
         forward_mode,
         tg_sent_status,
-        channel_id_mode
+        channel_id_mode,
+        config
     )
