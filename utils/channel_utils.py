@@ -1,7 +1,7 @@
 """频道相关工具函数"""
 import discord
 import logging
-from typing import Set, List, Tuple, Optional
+from typing import Set, List, Tuple, Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -33,19 +33,19 @@ def parse_channel_ids(channel_ids_str: Optional[str]) -> Tuple[Set[int], List[st
     logger.info(f"解析出 {len(parsed_ids)} 个潜在有效的频道ID。")
     return parsed_ids, parse_errors
 
-async def fetch_channels_from_ids(bot_instance, channel_ids_set: Set[int]) -> List[discord.TextChannel]:
+async def fetch_channels_from_ids(bot_instance, channel_ids_set: Set[int]) -> List[Union[discord.TextChannel, discord.Thread]]:
     """
-    根据提供的频道ID集合获取有效的TextChannel对象列表。
+    根据提供的频道ID集合获取有效的TextChannel或Thread对象列表。
 
     Args:
         bot_instance: Discord 机器人实例。
         channel_ids_set: 包含频道ID整数的集合。
 
     Returns:
-        一个包含有效discord.TextChannel对象的列表。
+        一个包含有效discord.TextChannel或discord.Thread对象的列表。
         (注意：此函数不返回查找错误，错误应在调用处处理或由 parse_channel_ids 返回)
     """
-    target_channels: List[discord.TextChannel] = []
+    target_channels: List[Union[discord.TextChannel, discord.Thread]] = []
     if not channel_ids_set:
         return target_channels
 
@@ -69,11 +69,11 @@ async def fetch_channels_from_ids(bot_instance, channel_ids_set: Set[int]) -> Li
                     logger.error(f"获取频道 {channel_id_int} 时发生未知错误: {e}")
                     continue # 跳过这个ID
 
-            # 检查是否是文本频道
-            if isinstance(channel, discord.TextChannel):
+            # 检查是否是文本频道或子区
+            if isinstance(channel, (discord.TextChannel, discord.Thread)):
                 target_channels.append(channel)
             else:
-                logger.warning(f"频道ID {channel_id_int} ({getattr(channel, 'name', 'N/A')}) 不是文本频道，跳过")
+                logger.warning(f"频道ID {channel_id_int} ({getattr(channel, 'name', 'N/A')}) 不是文本频道或子区，跳过")
 
         except Exception as e: # 捕获 get_channel 或 fetch_channel 之外的意外错误
              logger.error(f"处理频道ID {channel_id_int} 时发生意外错误: {e}")
@@ -125,8 +125,8 @@ async def prepare_target_channels(bot_instance, channel_ids, channel_id_mode, fo
             logger.warning(f"SPECIAL_CHANNELS格式不正确: {type(config.SPECIAL_CHANNELS)}")
     
     for channel_id_int, current_channel in bot_instance.channels.items():
-        # 确保是 TextChannel
-        if not isinstance(current_channel, discord.TextChannel):
+        # 确保是 TextChannel 或 Thread
+        if not isinstance(current_channel, (discord.TextChannel, discord.Thread)):
             continue
         # 记录所有频道ID
         all_channel_ids.add(channel_id_int)

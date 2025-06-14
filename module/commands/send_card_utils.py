@@ -74,9 +74,14 @@ async def handle_send_command(
         for target_channel_obj in target_channels:
             try:
                 await target_channel_obj.send(embed=embed)
-                logger.info(
-                    f"Embed成功发送到频道 {target_channel_obj.id} ({target_channel_obj.name})"
-                )
+                if isinstance(target_channel_obj, discord.Thread):
+                    logger.info(
+                        f"Embed成功发送到子区 {target_channel_obj.id} ({target_channel_obj.name})"
+                    )
+                else:
+                    logger.info(
+                        f"Embed成功发送到频道 {target_channel_obj.id} ({target_channel_obj.name})"
+                    )
                 sent_to_channels += 1
                 sent_channel_mentions.append(target_channel_obj.mention)
             except discord.Forbidden:

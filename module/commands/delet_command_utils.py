@@ -29,8 +29,8 @@ async def  handle_delete_command(
                      await interaction.response.send_message("❌ 无法找到或访问该频道", ephemeral=True)
                      return
 
-            if not isinstance(channel, discord.TextChannel):
-                 await interaction.response.send_message("❌ 目标必须是文本频道", ephemeral=True)
+            if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+                 await interaction.response.send_message("❌ 目标必须是文本频道或子区", ephemeral=True)
                  return
 
             try:

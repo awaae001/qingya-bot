@@ -59,8 +59,12 @@ async def handle_text_command(
             if local_image_path:
                 file_to_send_this_time = discord.File(local_image_path, filename=image_file.filename)
 
-            await target_channel_obj.send(content=content if content else None, file=file_to_send_this_time)
-            logger.info(f"消息成功发送到频道 {target_channel_obj.id} ({target_channel_obj.name})")
+            if isinstance(target_channel_obj, discord.Thread):
+                await target_channel_obj.send(content=content if content else None, file=file_to_send_this_time)
+                logger.info(f"消息成功发送到子区 {target_channel_obj.id} ({target_channel_obj.name})")
+            else:
+                await target_channel_obj.send(content=content if content else None, file=file_to_send_this_time)
+                logger.info(f"消息成功发送到频道 {target_channel_obj.id} ({target_channel_obj.name})")
             sent_to_channels += 1
             sent_channel_mentions.append(target_channel_obj.mention)
 

@@ -83,7 +83,6 @@ class TelegramBot:
             
         # 调用新的转发方法
         await self.discord_bot.forward_message(content)
-        # 自动发送一份到Telegram频道
         if config.SYNC_DISCORD_TO_TG:
             await self.send_to_telegram(f"[自动转发] \n {content.strip()}")
         await update.message.reply_text("消息和附件已发送到Discord并自动转发回Telegram")
