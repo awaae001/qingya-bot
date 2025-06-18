@@ -1,12 +1,13 @@
+import os
 import discord
 from discord import app_commands
 import logging
 import config
-import json
-import uuid
 from datetime import datetime
+from typing import List
 from .commands import text_command_utils, send_card_utils, delet_command_utils, status_utils
-from .feedback import FeedbackView, FeedbackReplyView,delete_feedback, FEEDBACK_DATA_PATH, save_feedback
+from .commands import rep_admin_utils, go_top_utils, fetch_utils, fetch_upd_utils
+from .feedback import FeedbackView, FeedbackReplyView, delete_feedback, FEEDBACK_DATA_PATH, save_feedback
 
 logger = logging.getLogger(__name__)
 
@@ -207,134 +208,78 @@ def register_commands(tree: app_commands.CommandTree, bot_instance):
     ])
     async def rep_admin_command(interaction: discord.Interaction, action: str = "create"):
         """处理/rep_admin命令，支持创建私聊按钮或重建未回复请求"""
-        if action == "create":
-            embed = discord.Embed(
-                title="📢 管理员私聊",
-                description="点击下方按钮提交您创建一个输入框，键入你要私聊的内容",
-                color=discord.Color.gold()
-            )
-            embed.set_footer(text=f"{config.BOT_NAME} · 私聊系统（管理员）")
-            
-            view = FeedbackView()
-            await interaction.response.send_message(
-                embed=embed,
-                view=view,
-                ephemeral=False
-            )
-            logger.info(f"管理员 {interaction.user} 请求了私聊表单")
-        elif action == "rebuild":
-            try:
-                # 加载所有反馈数据
-                if not FEEDBACK_DATA_PATH.exists():
-                    await interaction.response.send_message(
-                        "⚠️ 没有找到任何反馈数据文件",
-                        ephemeral=True
-                    )
-                    return
-                
-                with open(FEEDBACK_DATA_PATH, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                
-                # 筛选未回复请求（排除已处理记录）
-                pending_requests = [
-                    fb for fb in data.values() 
-                    if "user_id" in fb and "timestamp" in fb and
-                    not any(k.startswith(("rejected_", "ignored_")) for k in data)
-                ]
-                
-                if not pending_requests:
-                    await interaction.response.send_message(
-                        "✅ 没有需要重建的未回复请求",
-                        ephemeral=True
-                    )
-                    return
-                
-                # 获取反馈频道
-                feedback_channel_id = config.LOG_CHANNELS[0] if config.LOG_CHANNELS else None
-                if not feedback_channel_id:
-                    await interaction.response.send_message(
-                        "⚠️ 未配置反馈频道(LOG_CHANNELS)",
-                        ephemeral=True
-                    )
-                    return
-                
-                channel = interaction.client.get_channel(feedback_channel_id)
-                if not channel:
-                    channel = await interaction.client.fetch_channel(feedback_channel_id)
-                
-                # 重建每个未回复请求
-                count = 0
-                for fb_id, fb_data in data.items():
-                    if "user_id" in fb_data and "timestamp" in fb_data:
-                        # 创建新ID避免冲突
-                        new_id = str(uuid.uuid4())
-                        
-                        embed = discord.Embed(
-                            title="🔄 重建的私聊请求",
-                            description=fb_data["content"],
-                            color=discord.Color.orange()
-                        )
-                        embed.add_field(name="原始ID", value=fb_id, inline=False)
-                        embed.add_field(name="新ID", value=new_id, inline=False)
-                        embed.set_author(
-                            name=f"用户ID: {fb_data['user_id']}",
-                            icon_url=None
-                        )
-                        embed.set_footer(text=f"原始提交时间: {datetime.fromtimestamp(fb_data['timestamp']).strftime('%Y-%m-%d %H:%M:%S')}")
-                        
-                        view = FeedbackReplyView(new_id)
-                        await channel.send(embed=embed, view=view)
-                        
-                        # 保存新记录并删除原始数据
-                        save_feedback(new_id, fb_data["user_id"], fb_data["content"])
-                        delete_feedback(fb_id)
-                        count += 1
-                
-                await interaction.response.send_message(
-                    f"✅ 已成功重建 {count} 个未回复请求",
-                    ephemeral=True
-                )
-                logger.info(f"管理员 {interaction.user} 重建了 {count} 个未回复私聊请求")
-                
-            except Exception as e:
-                await interaction.response.send_message(
-                    f"❌ 重建请求失败: {str(e)}",
-                    ephemeral=True
-                )
-                logger.error(f"重建未回复请求失败: {e}")
+        await rep_admin_utils.handle_rep_admin_command(
+            interaction=interaction,
+            action=action,
+            FEEDBACK_DATA_PATH=FEEDBACK_DATA_PATH,
+            LOG_CHANNELS=config.LOG_CHANNELS,
+            BOT_NAME=config.BOT_NAME
+        )
 
     @tree.command(name="status", description="显示系统和机器人状态")
     async def status_command(interaction: discord.Interaction):
         """显示系统和机器人状态"""
         await status_utils.handle_status_command(interaction, bot_instance)
 
-    @tree.command(name="回顶", description="发送回到顶部消息")
+    @tree.command(name="回顶", description="创建回到顶部导航")
     async def go_top_command(interaction: discord.Interaction):
         """处理/go_top命令，发送回到顶部消息"""
-        view = discord.ui.View()
-        channel_id = interaction.channel_id
-        channel_name = interaction.channel.name
-        
-        # 如果是子区，使用 thread_id 代替 channel_id
-        if hasattr(interaction.channel, 'thread') and interaction.channel.thread:
-            channel_id = interaction.channel.thread.id
-            channel_name = f"子区 {interaction.channel.thread.name}"
-        
-        top_link = f"discord://discord.com/channels/{interaction.guild_id}/{channel_id}/0"
-        view.add_item(discord.ui.Button(
-            label="点击回到顶部",
-            url=top_link,
-            style=discord.ButtonStyle.link,
-            emoji="⬆️"
-        ))
-        
-        embed = discord.Embed(
-            title="⬆️ 回到顶部导航",
-            description=f"使用按钮可以快速回到{'子区' if hasattr(interaction.channel, 'thread') and interaction.channel.thread else '频道'}最顶部",
-            color=discord.Color.green()
+        await go_top_utils.handle_go_top_command(
+            interaction=interaction,
+            BOT_NAME=config.BOT_NAME
         )
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        embed.set_footer(text=f"{config.BOT_NAME} · 导航系统 | 发送时间: {timestamp}")
+
+    # 图片文件名自动补全功能
+    async def filename_autocomplete(
+        interaction: discord.Interaction,
+        current: str
+    ) -> List[app_commands.Choice[str]]:
+        image_dir = "data/fetch"
+        if not os.path.exists(image_dir):
+            return []
+            
+        # 递归获取所有支持的图片文件
+        images = []
+        for root, _, files in os.walk(image_dir):
+            for f in files:
+                if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
+                    rel_path = os.path.relpath(os.path.join(root, f), image_dir)
+                    images.append(rel_path)
         
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-        logger.info(f"用户 {interaction.user} 在{channel_name} 使用了回到顶部命令")
+        # 返回匹配当前输入的文件名(不区分大小写)
+        return [
+            app_commands.Choice(name=f, value=f)
+            for f in images 
+            if current.lower() in f.lower()
+        ][:25]  # 限制最多返回25个选项
+
+    @tree.command(name="fetch", description="发送指定或随机图片到当前频道或回复指定消息")
+    @app_commands.check(check_auth)
+    @app_commands.describe(
+        filename="指定图片文件名(可自动补全)",
+        message_link="要回复的消息链接(可选)"
+    )
+    @app_commands.autocomplete(filename=filename_autocomplete)
+    async def fetch_command(
+        interaction: discord.Interaction, 
+        filename: str = None,
+        message_link: str = None
+    ):
+        """处理/fetch命令，发送指定或随机图片到当前频道或回复指定消息"""
+        await fetch_utils.fetch_images(interaction, filename, message_link)
+
+    @tree.command(name="fetch_upd", description="上传图片到指定目录")
+    @app_commands.check(check_auth)
+    @app_commands.describe(
+        sender="发送者标识",
+        context="上下文标识",
+        image_url="图片URL"
+    )
+    async def fetch_upd_command(
+        interaction: discord.Interaction,
+        sender: str,
+        context: str,
+        image_url: str
+    ):
+        """处理/fetch_upd命令，上传图片到本地"""
+        await fetch_upd_utils.upload_image(interaction, context, image_url, sender)
