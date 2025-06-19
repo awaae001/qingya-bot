@@ -3,6 +3,7 @@ import discord
 from discord import app_commands
 import logging
 import config
+import json
 from datetime import datetime
 from typing import List
 from .commands import text_command_utils, send_card_utils, delet_command_utils, status_utils
@@ -41,7 +42,6 @@ async def check_command_auth(interaction: discord.Interaction):
     """检查特定命令权限"""
     command_name = interaction.command.name
     
-    # 仅"神"身份组可执行的命令
     if command_name in ["fetch_upd", "fetch_del", "del"]:
         return await check_role_auth(interaction, role_type="upload")
         
@@ -75,8 +75,6 @@ async def check_upload_auth(interaction: discord.Interaction):
     # 系统管理员始终有权限
     if config.AUTHORIZED_USERS and str(interaction.user.id) in config.AUTHORIZED_USERS:
         return True
-        
-    # 检查"神"身份组权限
     return await check_role_auth(interaction, role_type="upload")
 
 
@@ -306,6 +304,22 @@ def register_commands(tree: app_commands.CommandTree, bot_instance):
                 if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
                     rel_path = os.path.relpath(os.path.join(root, f), image_dir)
                     images.append(rel_path)
+
+        metadata_path = os.path.join("data/fetch", "metadata.json")
+        if os.path.exists(metadata_path):
+            with open(metadata_path, 'r', encoding='utf-8') as f:
+                metadata_list = json.load(f)
+            if not (config.AUTHORIZED_USERS and str(interaction.user.id) in config.AUTHORIZED_USERS):
+                current_guild = str(interaction.guild.id) if interaction.guild else None
+                if current_guild:
+                    # 过滤出当前服务器的图片
+                    server_images = []
+                    for img_path in images:
+                        img_name = os.path.basename(img_path)
+                        img_meta = next((m for m in metadata_list if m['saved_filename'] == img_name), None)
+                        if img_meta and img_meta['guild_id'] == current_guild:
+                            server_images.append(img_path)
+                    images = server_images
         
         return [
             app_commands.Choice(name=os.path.basename(f), value=f)

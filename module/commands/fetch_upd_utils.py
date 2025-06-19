@@ -51,6 +51,7 @@ async def upload_image(interaction: discord.Interaction, context: str, image_url
             'upload_time': datetime.now().isoformat(),
             'saved_filename': save_filename,
             'relative_path': os.path.join(date_str, save_filename),
+            'guild_id': str(interaction.guild.id) if interaction.guild else None,
         }
         
         metadata_path = os.path.join(base_path, 'metadata.json')
