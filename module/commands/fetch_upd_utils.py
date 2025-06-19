@@ -50,7 +50,7 @@ async def upload_image(interaction: discord.Interaction, context: str, image_url
             'uploader_name': interaction.user.name,
             'upload_time': datetime.now().isoformat(),
             'saved_filename': save_filename,
-            'context': context
+            'relative_path': os.path.join(date_str, save_filename),
         }
         
         metadata_path = os.path.join(base_path, 'metadata.json')
@@ -75,6 +75,16 @@ async def upload_image(interaction: discord.Interaction, context: str, image_url
             f"✅ 图片已保存为: {save_filename}", 
             ephemeral=True
         )
+        # 使用bot实例中的channel_logger
+        if hasattr(interaction.client, 'channel_logger'):
+            await interaction.client.channel_logger.send_to_channel(
+                source="调取小助手",
+                module="upload_image",
+                description=f"用户 <@{interaction.user.id}> 上传的图片已保存为: {save_filename}",
+                additional_info=f"图片URL: {image_url}",
+            )
+        else:
+            logger.info(f"用户 {interaction.user.name} 上传的图片已保存为: {save_filename} (未发送到频道，未找到channel_logger)")
         
     except Exception as e:
         logger.error(f"用户 {interaction.user.name} 上传的图片保存失败 {str(e)}")

@@ -3,6 +3,7 @@ from discord import app_commands
 import logging
 import asyncio
 import config
+from utils.channel_logger import ChannelLogger
 
 # 导入拆分出去的模块
 import module.discord_commands as discord_commands
@@ -24,12 +25,15 @@ class DiscordBot(discord.Client):
         self.tree = app_commands.CommandTree(self)
         self.telegram_bot = telegram_bot
         self.channels = {}  # 存储多个频道 {channel_id: channel_object}
+        self.channel_logger = ChannelLogger(__name__)
     
     async def on_ready(self):
         """当 Discord 机器人准备就绪时调用"""
         logger.info(f'Discord 机器人已登录为 {self.user}')
         await self.tree.sync()
-        
+        self.channel_logger.set_bot(self)  
+        self.channel_logger.set_default_channel()  
+
         # 获取所有指定的服务器和频道
         try:
             if not config.DISCORD_SERVERS:

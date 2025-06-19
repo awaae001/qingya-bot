@@ -2,6 +2,7 @@ import os
 import random
 import discord
 import logging
+from utils.channel_logger import ChannelLogger
 
 logger = logging.getLogger(__name__)
 async def fetch_images(interaction: discord.Interaction, filename: str = None, message_link: str = None):
@@ -23,8 +24,7 @@ async def fetch_images(interaction: discord.Interaction, filename: str = None, m
 
     if filename:
         # 只比较文件名部分，忽略路径
-        selected = next((f for f in images 
-                        if os.path.basename(f).lower() == os.path.basename(filename).lower()), None)
+        selected = next((f for f in images if os.path.basename(f).lower() == os.path.basename(filename).lower()), None)
         if not selected:
             await interaction.response.send_message(f"未找到文件: {filename}", ephemeral=True)
             return
@@ -48,6 +48,15 @@ async def fetch_images(interaction: discord.Interaction, filename: str = None, m
                     raise ValueError("频道未找到")
                 
                 logger.info(f"用户 {interaction.user.name} 使用了命令，回复了消息 {message_id} ")
+                
+                if hasattr(interaction.client, 'channel_lohher'):
+                    await interaction.client.channel_logger.send_to_channel(
+                        source="调取小助手",
+                        module="fetch_images",
+                        description=f"用户 {interaction.user.name} 回复了消息 {message_id} 的图片: {os.path.basename(selected)}",
+                        additional_info=f"图片路径: {selected} \n \n 频道: <#{interaction.channel.id}> \n 用户id: <@{interaction.user.id}>",
+                    )
+                
                 message = await channel.fetch_message(message_id)
                 if isinstance(channel, discord.Thread):
                     await channel.send(file=picture, reference=message)
@@ -60,3 +69,12 @@ async def fetch_images(interaction: discord.Interaction, filename: str = None, m
                 logger.error(f"回复消息失败: {e}")
         else:
             await interaction.response.send_message(file=picture)
+            if hasattr(interaction.client, 'channel_logger'):
+                await interaction.client.channel_logger.send_to_channel(
+                    source="调取小助手",
+                    module="fetch_images",
+                    description=f"用户 {interaction.user.name} 发送了图片: {os.path.basename(selected)}",
+                    additional_info=f"图片路径: {selected} \n 频道: <#{interaction.channel.id}> \n 用户id: <@{interaction.user.id}>",
+                )
+            else:
+                logger.info(f"用户 {interaction.user.name} 发送了图片: {os.path.basename(selected)} (未发送到频道，未找到channel_logger)")

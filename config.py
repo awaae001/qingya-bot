@@ -57,6 +57,20 @@ AUTHORIZED_USERS = [
     if user_id.strip()
 ]
 
+# 授权身份组配置 (支持从环境变量或直接配置)
+# 格式: "roleid1,roleid2" 或 [roleid1, roleid2]
+AUTHORIZED_ROLES = [
+    int(role_id.strip())
+    for role_id in os.getenv("AUTHORIZED_ROLES", "").split(",")
+    if role_id.strip()
+]
+
+BASIC_ROLES = [
+    int(role_id.strip())
+    for role_id in os.getenv("BASIC_ROLES", "").split(",")
+    if role_id.strip()
+]
+
 # 特殊频道配置 (用于TG转发和命令默认跳过)
 SPECIAL_CHANNELS = [
     int(channel_id.strip())

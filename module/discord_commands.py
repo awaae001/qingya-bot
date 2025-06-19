@@ -6,18 +6,79 @@ import config
 from datetime import datetime
 from typing import List
 from .commands import text_command_utils, send_card_utils, delet_command_utils, status_utils
-from .commands import rep_admin_utils, go_top_utils, fetch_utils, fetch_upd_utils
+from .commands import rep_admin_utils, go_top_utils, fetch_utils, fetch_upd_utils, fetch_del_utils
 from .feedback import FeedbackView, FeedbackReplyView, delete_feedback, FEEDBACK_DATA_PATH, save_feedback
 
 logger = logging.getLogger(__name__)
 
-async def check_auth(interaction: discord.Interaction):
-    """检查用户权限"""
-    if config.AUTHORIZED_USERS and str(interaction.user.id) not in config.AUTHORIZED_USERS:
-        logger.warning(f"未授权人员 {interaction.user.name} ({interaction.user.id}) 尝试使用命令 /{interaction.command.name}")
-        await interaction.response.send_message("❌ 抱歉，你没有使用此命令的权限", ephemeral=True)
+async def check_role_auth(interaction: discord.Interaction, role_type: str = "basic"):
+    """检查用户身份组权限
+    role_type: 
+      - "basic": 检查普通授权身份组
+      - "upload": 检查上传权限身份组
+    """
+    if role_type == "basic":
+        if not hasattr(config, 'BASIC_ROLES') or not config.BASIC_ROLES:
+            return True
+        role_list = config.BASIC_ROLES
+        error_msg = "❌ 抱歉，你没有使用此命令的基本权限"
+    elif role_type == "upload":
+        if not hasattr(config, 'AUTHORIZED_ROLES') or not config.AUTHORIZED_ROLES:
+            return True
+        role_list = config.AUTHORIZED_ROLES
+        error_msg = "❌ 抱歉，你没有上传/删除权限"
+    else:
+        return False
+        
+    user_roles = [role.id for role in interaction.user.roles]
+    if not any(role_id in user_roles for role_id in role_list):
+        logger.warning(f"无权限身份组用户 {interaction.user.name} ({interaction.user.id}) 尝试使用命令 /{interaction.command.name}")
+        await interaction.response.send_message(error_msg, ephemeral=True)
         return False
     return True
+
+async def check_command_auth(interaction: discord.Interaction):
+    """检查特定命令权限"""
+    command_name = interaction.command.name
+    
+    # 仅"神"身份组可执行的命令
+    if command_name in ["fetch_upd", "fetch_del", "del"]:
+        return await check_role_auth(interaction, role_type="upload")
+        
+    # 管理员命令(无法通过身份组获得权限)
+    if command_name in ["text", "send", "rep_admin"]:
+        if not config.AUTHORIZED_USERS or str(interaction.user.id) not in config.AUTHORIZED_USERS:
+            logger.warning(f"非管理员用户 {interaction.user.name} ({interaction.user.id}) 尝试使用管理员命令 /{command_name}")
+            await interaction.response.send_message("❌ 抱歉，此命令仅系统管理员可用", ephemeral=True)
+            return False
+        return True
+        
+    # 普通命令
+    return True
+
+async def check_auth(interaction: discord.Interaction):
+    """检查用户权限"""
+    # 管理员直接通过权限检查，但仍需检查特定命令权限
+    if config.AUTHORIZED_USERS and str(interaction.user.id) in config.AUTHORIZED_USERS:
+        return await check_command_auth(interaction)
+    
+    # 检查基本身份组权限
+    if not await check_role_auth(interaction, role_type="basic"):
+        logger.warning(f"未授权人员 {interaction.user.name} ({interaction.user.id}) 尝试使用命令 /{interaction.command.name}")
+        return False
+        
+    # 检查特定命令权限
+    return await check_command_auth(interaction)
+
+async def check_upload_auth(interaction: discord.Interaction):
+    """检查上传/删除图片权限"""
+    # 系统管理员始终有权限
+    if config.AUTHORIZED_USERS and str(interaction.user.id) in config.AUTHORIZED_USERS:
+        return True
+        
+    # 检查"神"身份组权限
+    return await check_role_auth(interaction, role_type="upload")
+
 
 def register_commands(tree: app_commands.CommandTree, bot_instance):
     """注册所有斜杠命令"""
@@ -228,7 +289,7 @@ def register_commands(tree: app_commands.CommandTree, bot_instance):
             interaction=interaction,
             BOT_NAME=config.BOT_NAME
         )
-
+        
     # 图片文件名自动补全功能
     async def filename_autocomplete(
         interaction: discord.Interaction,
@@ -246,9 +307,8 @@ def register_commands(tree: app_commands.CommandTree, bot_instance):
                     rel_path = os.path.relpath(os.path.join(root, f), image_dir)
                     images.append(rel_path)
         
-        # 返回匹配当前输入的文件名(不区分大小写)
         return [
-            app_commands.Choice(name=f, value=f)
+            app_commands.Choice(name=os.path.basename(f), value=f)
             for f in images 
             if current.lower() in f.lower()
         ][:25]  # 限制最多返回25个选项
@@ -269,7 +329,7 @@ def register_commands(tree: app_commands.CommandTree, bot_instance):
         await fetch_utils.fetch_images(interaction, filename, message_link)
 
     @tree.command(name="fetch_upd", description="上传图片到指定目录")
-    @app_commands.check(check_auth)
+    @app_commands.check(check_upload_auth)
     @app_commands.describe(
         sender="发送者标识",
         context="上下文标识",
@@ -283,3 +343,16 @@ def register_commands(tree: app_commands.CommandTree, bot_instance):
     ):
         """处理/fetch_upd命令，上传图片到本地"""
         await fetch_upd_utils.upload_image(interaction, context, image_url, sender)
+
+    @tree.command(name="fetch_del", description="删除指定图片文件")
+    @app_commands.check(check_upload_auth)
+    @app_commands.describe(
+        filename="要删除的图片文件名"
+    )
+    @app_commands.autocomplete(filename=filename_autocomplete)
+    async def fetch_del_command(
+        interaction: discord.Interaction,
+        filename: str
+    ):
+        """处理/fetch_del命令，删除指定图片文件"""
+        await fetch_del_utils.delete_image(interaction, filename)
