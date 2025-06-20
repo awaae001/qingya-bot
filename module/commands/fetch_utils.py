@@ -3,6 +3,7 @@ import random
 import discord
 import logging
 import json
+import config
 from utils.channel_logger import ChannelLogger
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,9 @@ async def fetch_images(interaction: discord.Interaction, filename: str = None, m
         image_meta = next((m for m in metadata_list if m['saved_filename'] == os.path.basename(selected)), None)
         if image_meta:
             current_guild = str(interaction.guild.id) if interaction.guild else None
-            if current_guild and image_meta['guild_id'] != current_guild:
+            if str(interaction.user.id) in config.AUTHORIZED_USERS:
+                pass
+            elif current_guild and image_meta['guild_id'] != current_guild:
                 await interaction.response.send_message("❌ 无权调取其他服务器的图片", ephemeral=True)
                 return
 
