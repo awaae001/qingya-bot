@@ -66,7 +66,7 @@ async def fetch_images(interaction: discord.Interaction, filename: str = None, m
                 
                 logger.info(f"用户 {interaction.user.name} 使用了命令，回复了消息 {message_id} ")
                 
-                if hasattr(interaction.client, 'channel_lohher'):
+                if hasattr(interaction.client, 'channel_logger'):
                     await interaction.client.channel_logger.send_to_channel(
                         source="调取小助手",
                         module="fetch_images",
