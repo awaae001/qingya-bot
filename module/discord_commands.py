@@ -347,16 +347,25 @@ def register_commands(tree: app_commands.CommandTree, bot_instance):
     @app_commands.describe(
         sender="发送者标识",
         context="上下文标识",
-        image_url="图片URL"
+        image_url="图片URL(可选)",
+        image_file="图片文件附件(可选)"
     )
     async def fetch_upd_command(
         interaction: discord.Interaction,
         sender: str,
         context: str,
-        image_url: str
+        image_url: str = None,
+        image_file: discord.Attachment = None
     ):
         """处理/fetch_upd命令，上传图片到本地"""
-        await fetch_upd_utils.upload_image(interaction, context, image_url, sender)
+        if image_url and image_file:
+            await interaction.response.send_message("❌ 请只提供图片URL或文件附件中的一种", ephemeral=True)
+            return
+        if not image_url and not image_file:
+            await interaction.response.send_message("❌ 请提供图片URL或文件附件", ephemeral=True)
+            return
+            
+        await fetch_upd_utils.upload_image(interaction, context, image_url, sender, image_file)
 
     @tree.command(name="fetch_del", description="删除指定图片文件")
     @app_commands.check(check_upload_auth)
