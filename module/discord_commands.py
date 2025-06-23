@@ -42,11 +42,11 @@ async def check_command_auth(interaction: discord.Interaction):
     """检查特定命令权限"""
     command_name = interaction.command.name
     
-    if command_name in ["fetch_upd", "fetch_del", "del"]:
+    if command_name in ["fetch_upd", "fetch_del"]:
         return await check_role_auth(interaction, role_type="upload")
         
     # 管理员命令(无法通过身份组获得权限)
-    if command_name in ["text", "send", "rep_admin"]:
+    if command_name in ["text", "send", "rep_admin", "del"]:
         if not config.AUTHORIZED_USERS or str(interaction.user.id) not in config.AUTHORIZED_USERS:
             logger.warning(f"非管理员用户 {interaction.user.name} ({interaction.user.id}) 尝试使用管理员命令 /{command_name}")
             await interaction.response.send_message("❌ 抱歉，此命令仅系统管理员可用", ephemeral=True)
