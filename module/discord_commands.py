@@ -77,6 +77,22 @@ async def check_upload_auth(interaction: discord.Interaction):
         return True
     return await check_role_auth(interaction, role_type="upload")
 
+async def has_basic_permission(interaction: discord.Interaction) -> bool:
+    """静默检查用户是否拥有基本权限（管理员或基本角色），不发送任何消息"""
+    # 检查是否为管理员
+    if config.AUTHORIZED_USERS and str(interaction.user.id) in config.AUTHORIZED_USERS:
+        return True
+    
+    # 检查基本身份组
+    if not hasattr(config, 'BASIC_ROLES') or not config.BASIC_ROLES:
+        return True  # 如果未设置身份组，则默认拥有权限
+        
+    user_roles_ids = {role.id for role in interaction.user.roles}
+    if not any(role_id in user_roles_ids for role_id in config.BASIC_ROLES):
+        logger.warning(f"无基本权限用户 {interaction.user.name} ({interaction.user.id}) 尝试访问受限自动补全功能")
+        return False
+        
+    return True
 
 def register_commands(tree: app_commands.CommandTree, bot_instance):
     """注册所有斜杠命令"""
@@ -293,6 +309,10 @@ def register_commands(tree: app_commands.CommandTree, bot_instance):
         interaction: discord.Interaction,
         current: str
     ) -> List[app_commands.Choice[str]]:
+        # 权限检查，无权限则返回空列表
+        if not await has_basic_permission(interaction):
+            return []
+
         image_dir = "data/fetch"
         if not os.path.exists(image_dir):
             return []
