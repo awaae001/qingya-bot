@@ -7,7 +7,7 @@ import json
 from datetime import datetime
 from typing import List
 from .commands import text_command_utils, send_card_utils, delet_command_utils, status_utils
-from .commands import rep_admin_utils, go_top_utils, fetch_utils, fetch_upd_utils, fetch_del_utils
+from .commands import rep_admin_utils, go_top_utils, fetch_utils, fetch_upd_utils, fetch_del_utils, down_image_utils
 from .feedback import FeedbackView, FeedbackReplyView, delete_feedback, FEEDBACK_DATA_PATH, save_feedback
 
 logger = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ async def check_command_auth(interaction: discord.Interaction):
     """检查特定命令权限"""
     command_name = interaction.command.name
     
-    if command_name in ["fetch_upd", "fetch_del"]:
+    if command_name in ["fetch_upd", "fetch_del", "down_image"]:
         return await check_role_auth(interaction, role_type="upload")
         
     # 管理员命令(无法通过身份组获得权限)
@@ -399,3 +399,19 @@ def register_commands(tree: app_commands.CommandTree, bot_instance):
     ):
         """处理/fetch_del命令，删除指定图片文件"""
         await fetch_del_utils.delete_image(interaction, filename)
+
+    @tree.command(name="down_image", description="下载指定消息中的所有图片并打包发送到日志频道")
+    @app_commands.check(check_upload_auth)
+    @app_commands.describe(
+        message_link="包含图片的消息链接"
+    )
+    async def down_image_command(
+        interaction: discord.Interaction,
+        message_link: str
+    ):
+        """处理/down_image命令，下载图片、打包并发送"""
+        await down_image_utils.handle_down_image_command(
+            interaction=interaction,
+            message_link=message_link,
+            bot_instance=bot_instance
+        )
