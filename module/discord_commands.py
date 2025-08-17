@@ -303,6 +303,16 @@ def register_commands(tree: app_commands.CommandTree, bot_instance):
             interaction=interaction,
             BOT_NAME=config.BOT_NAME
         )
+
+    @tree.context_menu(name="回到顶部")
+    @app_commands.check(check_auth)
+    async def go_top_context_menu(interaction: discord.Interaction, message: discord.Message):
+        """上下文菜单：回到顶部"""
+        await go_top_utils.handle_go_top_context(
+            interaction=interaction,
+            message=message,
+            BOT_NAME=config.BOT_NAME
+        )
         
     # 图片文件名自动补全功能
     async def filename_autocomplete(
