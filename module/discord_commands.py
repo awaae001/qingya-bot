@@ -7,7 +7,7 @@ import json
 from datetime import datetime
 from typing import List
 from .commands import text_command_utils, send_card_utils, delet_command_utils, status_utils
-from .commands import rep_admin_utils, go_top_utils, fetch_utils, fetch_upd_utils, fetch_del_utils, down_image_utils
+from .commands import rep_admin_utils, go_top_utils, fetch_utils, fetch_upd_utils, fetch_del_utils, down_image_utils, keep_alive_utils
 from .feedback import FeedbackView, FeedbackReplyView, delete_feedback, FEEDBACK_DATA_PATH, save_feedback
 
 logger = logging.getLogger(__name__)
@@ -425,3 +425,22 @@ def register_commands(tree: app_commands.CommandTree, bot_instance):
             message_link=message_link,
             bot_instance=bot_instance
         )
+
+    @tree.command(name="保活子区", description="管理保活子区列表")
+    @app_commands.check(check_auth)
+    @app_commands.describe(
+        action="选择要执行的操作",
+        channel_id="目标频道的ID (仅在添加/移除时需要)"
+    )
+    @app_commands.choices(action=[
+        app_commands.Choice(name="列出所有保活子区", value="list"),
+        app_commands.Choice(name="添加一个子区到保活列表", value="add"),
+        app_commands.Choice(name="从保活列表移除一个子区", value="remove")
+    ])
+    async def keep_alive_command(
+        interaction: discord.Interaction,
+        action: str,
+        channel_id: str = None
+    ):
+        """处理/保活子区命令"""
+        await keep_alive_utils.handle_keep_alive_command(interaction, action, channel_id)

@@ -8,6 +8,7 @@ from utils.channel_logger import ChannelLogger
 # 导入拆分出去的模块
 import module.discord_commands as discord_commands
 import module.discord_forwarder as discord_forwarder
+from module.commands import keep_alive_utils
 
 # 设置日志
 logging.basicConfig(
@@ -32,7 +33,11 @@ class DiscordBot(discord.Client):
         logger.info(f'Discord 机器人已登录为 {self.user}')
         await self.tree.sync()
         self.channel_logger.set_bot(self)  
-        self.channel_logger.set_default_channel()  
+        self.channel_logger.set_default_channel()
+
+        # 启动保活任务
+        if not keep_alive_utils.keep_alive_task.is_running():
+            keep_alive_utils.keep_alive_task.start(self)
 
         # 获取所有指定的服务器和频道
         try:

@@ -94,3 +94,7 @@ REJECT_COOLDOWN = int(os.getenv("REJECT_COOLDOWN", 86400))  # 1天冷却
 IMAGE_DIR = os.getenv("IMAGE_DIR", "./data/image/") # 添加一个默认值以防未设置
 CLEANUP_INTERVAL_HOURS = int(os.getenv("CLEANUP_INTERVAL_HOURS", 6)) 
 MAX_IMAGE_AGE_HOURS = int(os.getenv("MAX_IMAGE_AGE_HOURS", 24))
+
+# 保活功能配置
+KEEP_ALIVE_DATA_PATH = os.getenv("KEEP_ALIVE_DATA_PATH", "./data/keep_alive_channels.json")
+KEEP_ALIVE_INTERVAL_HOURS = int(os.getenv("KEEP_ALIVE_INTERVAL_HOURS", 6))
