@@ -444,3 +444,26 @@ def register_commands(tree: app_commands.CommandTree, bot_instance):
     ):
         """处理/保活子区命令"""
         await keep_alive_utils.handle_keep_alive_command(interaction, action, channel_id)
+
+    # 仓库 ID 自动补全
+    async def repo_id_autocomplete(
+        interaction: discord.Interaction,
+        current: str
+    ) -> List[app_commands.Choice[str]]:
+        # 目前返回空实现，因为 token 可能未配置
+        return []
+
+    @tree.command(name="show_commit", description="手动显示指定仓库的某次提交信息")
+    @app_commands.check(check_auth)
+    @app_commands.describe(
+        repo_id="仓库的配置 ID",
+        commit_sha="要显示的提交 SHA"
+    )
+    @app_commands.autocomplete(repo_id=repo_id_autocomplete)
+    async def show_commit_command(
+        interaction: discord.Interaction,
+        repo_id: str,
+        commit_sha: str
+    ):
+        """处理 /show_commit 命令"""
+        await interaction.response.send_message("github_token 未配置", ephemeral=True)

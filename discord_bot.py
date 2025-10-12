@@ -9,6 +9,7 @@ from utils.channel_logger import ChannelLogger
 import module.discord_commands as discord_commands
 import module.discord_forwarder as discord_forwarder
 from module.commands import keep_alive_utils
+from module.github_monitor import GitHubMonitor
 
 # 设置日志
 logging.basicConfig(
@@ -27,6 +28,7 @@ class DiscordBot(discord.Client):
         self.telegram_bot = telegram_bot
         self.channels = {}  # 存储多个频道 {channel_id: channel_object}
         self.channel_logger = ChannelLogger(__name__)
+        self.github_monitor = None  # GitHub 监听器
     
     async def on_ready(self):
         """当 Discord 机器人准备就绪时调用"""
@@ -60,6 +62,14 @@ class DiscordBot(discord.Client):
                         logger.error(f"在服务器 {guild.name} 中无法找到频道 ID: {channel_id}")
         except Exception as e:
             logger.error(f"设置 Discord 频道时出错: {e}")
+        
+        # 启动 GitHub 监听器
+        try:
+            if not self.github_monitor:
+                self.github_monitor = GitHubMonitor(self)
+                self.github_monitor.start()
+        except Exception as e:
+            logger.error(f"启动 GitHub 监听器时出错: {e}")
     
     
     async def setup_hook(self):
@@ -78,3 +88,11 @@ class DiscordBot(discord.Client):
     async def start_bot(self):
         """启动 Discord 机器人"""
         await self.start(config.DISCORD_BOT_TOKEN)
+    
+    async def close(self):
+        """关闭机器人时的清理工作"""
+        # 停止 GitHub 监听器
+        if self.github_monitor:
+            self.github_monitor.stop()
+        
+        await super().close()

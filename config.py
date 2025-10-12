@@ -98,3 +98,8 @@ MAX_IMAGE_AGE_HOURS = int(os.getenv("MAX_IMAGE_AGE_HOURS", 24))
 # 保活功能配置
 KEEP_ALIVE_DATA_PATH = os.getenv("KEEP_ALIVE_DATA_PATH", "./data/keep_alive_channels.json")
 KEEP_ALIVE_INTERVAL_HOURS = int(os.getenv("KEEP_ALIVE_INTERVAL_HOURS", 6))
+
+# GitHub 监听配置
+GITHUB_REPO_CONFIG_PATH = os.getenv("GITHUB_REPO_CONFIG_PATH", "./config/github_repo.json")
+GITHUB_COMMITS_CACHE_PATH = os.getenv("GITHUB_COMMITS_CACHE_PATH", "./data/github_commits_cache.json")
+GITHUB_CHECK_INTERVAL = int(os.getenv("GITHUB_CHECK_INTERVAL", 300))  # 默认 5 分钟 (300秒)
