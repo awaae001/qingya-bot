@@ -188,6 +188,119 @@ def create_commit_embed(
         return error_embed
 
 
+def create_merge_commit_embed(
+    commit_info: Dict,
+    repo_name: str,
+    branch_name: str,
+    repo_url: str
+) -> discord.Embed:
+    """
+    创建 GitHub 合并提交的专用 Discord Embed 消息
+    
+    Args:
+        commit_info: 提交信息字典
+        repo_name: 仓库名称（格式: owner/repo）
+        branch_name: 分支名称
+        repo_url: 仓库 URL
+        
+    Returns:
+        Discord Embed 对象
+    """
+    try:
+        # 获取分支颜色
+        color = BranchColorMapper.get_color(branch_name)
+        branch_emoji = BranchColorMapper.get_branch_emoji(branch_name)
+        
+        # 创建 Embed，使用特殊的合并颜色
+        embed = discord.Embed(
+            color=0x6f42c1,  # 紫色表示合并
+            timestamp=commit_info.get('date', datetime.now())
+        )
+        
+        # 设置标题，添加合并标识
+        title = f"🔀 {repo_name} [{branch_name}] - 合并提交"
+        embed.title = title
+        embed.url = commit_info.get('url', repo_url)
+        
+        # 设置作者信息
+        author_name = commit_info.get('author_name', 'Unknown')
+        author_login = commit_info.get('author_login')
+        if author_login:
+            author_name = f"{author_name} (@{author_login})"
+        
+        author_avatar = commit_info.get('author_avatar')
+        if author_avatar:
+            embed.set_author(name=author_name, icon_url=author_avatar)
+        else:
+            embed.set_author(name=author_name)
+        
+        # 提交消息（限制 512 字符）
+        commit_message = commit_info.get('message', 'No commit message')
+        if len(commit_message) > 512:
+            commit_message = commit_message[:509] + '...'
+        
+        # 分割提交消息为标题和描述
+        message_lines = commit_message.split('\n', 1)
+        commit_title = message_lines[0]
+        commit_description = message_lines[1] if len(message_lines) > 1 else ''
+        
+        # 设置描述
+        description = f"**{commit_title}**"
+        if commit_description.strip():
+            description += f"\n{commit_description.strip()}"
+        embed.description = description
+        
+        # 添加提交信息字段
+        short_sha = commit_info.get('short_sha', commit_info.get('sha', '')[:7])
+        embed.add_field(
+            name="📌 提交",
+            value=f"[`{short_sha}`]({commit_info.get('url', '')})",
+            inline=True
+        )
+        
+        # 添加父提交数量信息
+        parent_count = commit_info.get('parent_count', 0)
+        embed.add_field(
+            name="🔀 合并类型",
+            value=f"{parent_count} 个父提交",
+            inline=True
+        )
+        
+        # 添加文件变更统计
+        files_changed = commit_info.get('files_changed', 0)
+        additions = commit_info.get('additions', 0)
+        deletions = commit_info.get('deletions', 0)
+        
+        changes_text = f"📁 {files_changed} 个文件"
+        if additions > 0 or deletions > 0:
+            changes_text += f"\n🟢 +{additions} 🔴 -{deletions}"
+        
+        embed.add_field(
+            name="📊 变更",
+            value=changes_text,
+            inline=True
+        )
+        
+        # 设置页脚
+        embed.set_footer(
+            text=f"GitHub • {repo_name} • PR 合并",
+            icon_url="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
+        )
+        
+        logger.debug(f"创建合并 Embed: {repo_name} [{branch_name}] {short_sha}")
+        return embed
+        
+    except Exception as e:
+        logger.error(f"创建合并 Embed 时出错: {e}")
+        # 返回一个简单的错误 Embed
+        error_embed = discord.Embed(
+            title="❌ 创建合并通知失败",
+            description=f"处理提交信息时出错: {str(e)}",
+            color=0xff0000
+        )
+        return error_embed
+
+
 def create_error_embed(error_message: str, repo_name: str = None) -> discord.Embed:
     """
     创建错误信息的 Embed

@@ -4,10 +4,10 @@ import asyncio
 from discord.ext import tasks
 from typing import List, Dict, Optional, Tuple
 import config
-from utils.github_config_loader import load_github_repos, GitHubRepoConfig
-from utils.github_api import GitHubAPIClient
-from utils.commit_cache import CommitCache
-from utils.github_embed import create_commit_embed, create_error_embed
+from utils.github.github_config_loader import load_github_repos, GitHubRepoConfig
+from utils.github.github_api import GitHubAPIClient
+from utils.github.commit_cache import CommitCache
+from utils.github.github_embed import create_commit_embed, create_merge_commit_embed, create_error_embed
 
 logger = logging.getLogger(__name__)
 
@@ -120,15 +120,33 @@ class GitHubMonitor:
             
             # 发现新提交，获取所有新提交
             logger.info(f"发现新提交: {repo_name} [{branch}] {cached_sha[:7]} -> {latest_sha[:7]}")
-            new_commits = api_client.get_commits_since(repository, branch, cached_sha, max_commits=5)
+            new_commits = api_client.get_commits_since(repository, branch, cached_sha, max_commits=10)
             
             # 反转列表，从旧到新发送通知
             new_commits.reverse()
             
-            # 为每个新提交发送通知
+            # 检查是否有合并提交
+            merge_commits = []
+            regular_commits = []
+            
             for commit in new_commits:
-                await self.send_commit_notification(commit, repo_config, branch, repo_name, repository.html_url)
-                await asyncio.sleep(1)  # 避免发送过快
+                commit_info = api_client.get_commit_info(commit)
+                if commit_info.get('is_merge', False):
+                    merge_commits.append(commit)
+                else:
+                    regular_commits.append(commit)
+            
+            # 如果存在合并提交，只发送合并提交的通知，跳过常规提交
+            if merge_commits:
+                logger.info(f"检测到 {len(merge_commits)} 个合并提交，跳过 {len(regular_commits)} 个常规提交")
+                for commit in merge_commits:
+                    await self.send_commit_notification(commit, repo_config, branch, repo_name, repository.html_url)
+                    await asyncio.sleep(1)  # 避免发送过快
+            else:
+                # 没有合并提交，发送所有常规提交
+                for commit in regular_commits:
+                    await self.send_commit_notification(commit, repo_config, branch, repo_name, repository.html_url)
+                    await asyncio.sleep(1)  # 避免发送过快
             
             # 更新缓存
             self.cache.update_commit(str(repo_config.id), branch, latest_sha)
@@ -163,8 +181,11 @@ class GitHubMonitor:
                 logger.error("无法获取提交信息")
                 return
             
-            # 创建 Embed
-            embed = create_commit_embed(commit_info, repo_name, branch, repo_url)
+            # 根据是否为合并提交创建不同的 Embed
+            if commit_info.get('is_merge', False):
+                embed = create_merge_commit_embed(commit_info, repo_name, branch, repo_url)
+            else:
+                embed = create_commit_embed(commit_info, repo_name, branch, repo_url)
             
             # 检查服务器是否存在
             guild = self.bot.get_guild(repo_config.guild_id)

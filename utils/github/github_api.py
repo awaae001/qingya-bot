@@ -178,6 +178,11 @@ class GitHubAPIClient:
             author = commit.commit.author
             stats = commit.stats
             
+            # 获取父提交数量（用于判断是否为合并提交）
+            parents = commit.parents if hasattr(commit, 'parents') else []
+            parent_count = len(parents)
+            is_merge = parent_count >= 2
+            
             return {
                 'sha': commit.sha,
                 'short_sha': commit.sha[:7],
@@ -191,7 +196,9 @@ class GitHubAPIClient:
                 'additions': stats.additions,
                 'deletions': stats.deletions,
                 'total_changes': stats.total,
-                'files_changed': commit.files.totalCount
+                'files_changed': commit.files.totalCount,
+                'parent_count': parent_count,
+                'is_merge': is_merge
             }
         except Exception as e:
             logger.error(f"提取提交信息时出错: {e}")
