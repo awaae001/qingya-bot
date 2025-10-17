@@ -126,26 +126,43 @@ class GitHubMonitor:
             new_commits.reverse()
             
             # 检查是否有合并提交
-            merge_commits = []
-            regular_commits = []
-            
+            merge_commit_details = []
+            regular_commit_details = []
+
             for commit in new_commits:
                 commit_info = api_client.get_commit_info(commit)
+                if not commit_info:
+                    logger.warning(f"无法获取提交 {commit.sha} 的信息，跳过")
+                    continue
+                
                 if commit_info.get('is_merge', False):
-                    merge_commits.append(commit)
+                    merge_commit_details.append((commit, commit_info))
                 else:
-                    regular_commits.append(commit)
-            
+                    regular_commit_details.append((commit, commit_info))
+
             # 如果存在合并提交，只发送合并提交的通知，跳过常规提交
-            if merge_commits:
-                logger.info(f"检测到 {len(merge_commits)} 个合并提交，跳过 {len(regular_commits)} 个常规提交")
-                for commit in merge_commits:
-                    await self.send_commit_notification(commit, repo_config, branch, repo_name, repository.html_url)
+            if merge_commit_details:
+                num_merges = len(merge_commit_details)
+                num_regulars = len(regular_commit_details)
+
+                # 更新日志消息，使其更清晰
+                if num_merges == 1:
+                    parent_count = merge_commit_details[0][1].get('parent_count', 0)
+                    logger.info(f"检测到 1 个合并提交 ({parent_count} 个父提交)，跳过 {num_regulars} 个常规提交")
+                else:
+                    logger.info(f"检测到 {num_merges} 个合并提交，跳过 {num_regulars} 个常规提交")
+
+                for commit, commit_info in merge_commit_details:
+                    await self.send_commit_notification(
+                        commit, repo_config, branch, repo_name, repository.html_url, commit_info=commit_info
+                    )
                     await asyncio.sleep(1)  # 避免发送过快
             else:
                 # 没有合并提交，发送所有常规提交
-                for commit in regular_commits:
-                    await self.send_commit_notification(commit, repo_config, branch, repo_name, repository.html_url)
+                for commit, commit_info in regular_commit_details:
+                    await self.send_commit_notification(
+                        commit, repo_config, branch, repo_name, repository.html_url, commit_info=commit_info
+                    )
                     await asyncio.sleep(1)  # 避免发送过快
             
             # 更新缓存
@@ -160,7 +177,8 @@ class GitHubMonitor:
         repo_config: GitHubRepoConfig,
         branch: str,
         repo_name: str,
-        repo_url: str
+        repo_url: str,
+        commit_info: Optional[Dict] = None
     ):
         """
         发送提交通知到 Discord
@@ -171,11 +189,13 @@ class GitHubMonitor:
             branch: 分支名称
             repo_name: 仓库名称
             repo_url: 仓库 URL
+            commit_info: (可选) 预先获取的提交信息
         """
         try:
-            # 获取提交信息
-            api_client = self.api_clients.get(repo_config.github_token)
-            commit_info = api_client.get_commit_info(commit)
+            # 获取提交信息 (如果未提供)
+            if commit_info is None:
+                api_client = self.api_clients.get(repo_config.github_token)
+                commit_info = api_client.get_commit_info(commit)
             
             if not commit_info:
                 logger.error("无法获取提交信息")
